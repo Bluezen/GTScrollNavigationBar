@@ -166,7 +166,7 @@ shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherG
         
         [self setFrame:frame alpha:alpha animated:YES];
         
-        if (!self.scrollView.decelerating) {
+        if (!self.scrollView.decelerating && !self.translucent) {
             CGPoint newContentOffset = CGPointMake(self.scrollView.contentOffset.x,
                                                    contentOffsetY - contentOffsetYDelta);
             [self.scrollView setContentOffset:newContentOffset animated:YES];
@@ -219,10 +219,12 @@ shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherG
     }
     self.frame = frame;
     
-    CGRect parentViewFrame = self.scrollView.superview.frame;
-    parentViewFrame.origin.y += offsetY;
-    parentViewFrame.size.height -= offsetY;
-    self.scrollView.superview.frame = parentViewFrame;
+    if (!self.translucent) {
+        CGRect parentViewFrame = self.scrollView.superview.frame;
+        parentViewFrame.origin.y += offsetY;
+        parentViewFrame.size.height -= offsetY;
+        self.scrollView.superview.frame = parentViewFrame;
+    }
     
     if (animated) {
         [UIView commitAnimations];
