@@ -14,6 +14,10 @@ typedef enum {
     GTScrollNavigationBarScrollingUp
 } GTScrollNavigationBarState;
 
+extern NSString*  GTScrollNavigationBarFrameNotification;
+extern NSString*  GTScrollNavigationBarFrameNotificationOffsetYKey;
+extern NSString*  GTScrollNavigationBarFrameNotificationIsBarCondensedKey;
+
 @interface GTScrollNavigationBar : UINavigationBar
 
 @property (strong, nonatomic) UIScrollView *scrollView;
@@ -28,3 +32,4 @@ typedef enum {
 @property(strong, nonatomic, readonly) GTScrollNavigationBar *scrollNavigationBar;
 
 @end
+

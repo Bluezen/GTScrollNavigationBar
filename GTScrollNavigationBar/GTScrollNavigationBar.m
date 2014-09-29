@@ -10,19 +10,23 @@
 
 #define kNearZero 0.000001f
 
+NSString* GTScrollNavigationBarFrameNotification = @"GTScrollNavigationBarFrameNotification";
+NSString* GTScrollNavigationBarFrameNotificationOffsetYKey = @"GTScrollNavigationBarFrameNotificationOffsetYKey";
+NSString* GTScrollNavigationBarFrameNotificationIsBarCondensedKey = @"GTScrollNavigationBarFrameNotificationIsBarCondensedKey";
+
 @interface GTScrollNavigationBar () <UIGestureRecognizerDelegate>
 
-@property (strong, nonatomic) UIPanGestureRecognizer* panGesture;
-@property (assign, nonatomic) CGFloat lastContentOffsetY;
+@property (nonatomic, assign) CGFloat lastContentOffsetY;
+
+- (BOOL)isNavigationBarCompact;
 
 @end
 
 @implementation GTScrollNavigationBar
 
 @synthesize scrollView = _scrollView,
-            scrollState = _scrollState,
-            panGesture = _panGesture,
-            lastContentOffsetY = _lastContentOffsetY;
+scrollState = _scrollState,
+lastContentOffsetY = _lastContentOffsetY;
 
 - (id)initWithCoder:(NSCoder *)aDecoder {
     self = [super initWithCoder:aDecoder];
@@ -43,9 +47,7 @@
 
 - (void)setup
 {
-    self.panGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self
-                                                              action:@selector(handlePan:)];
-    self.panGesture.delegate = self;
+    self.lastContentOffsetY = 0.0f;
     
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(applicationDidBecomeActive)
@@ -54,7 +56,7 @@
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(statusBarOrientationDidChange)
                                                  name:UIApplicationDidChangeStatusBarOrientationNotification
-                                               object:nil];    
+                                               object:nil];
 }
 
 - (void)dealloc
@@ -65,31 +67,48 @@
     [[NSNotificationCenter defaultCenter] removeObserver:self
                                                     name:UIApplicationDidChangeStatusBarOrientationNotification
                                                   object:nil];
+    
+    [_scrollView removeObserver:self forKeyPath:@"contentOffset"];
+    [_scrollView.panGestureRecognizer removeTarget:self action:@selector(finishStateTransitionIfNeeded:)];
 }
 
 - (void)setScrollView:(UIScrollView*)scrollView
 {
+    [_scrollView removeObserver:self forKeyPath:@"contentOffset"];
+    [_scrollView.panGestureRecognizer removeTarget:self action:@selector(finishStateTransitionIfNeeded:)];
+    
     _scrollView = scrollView;
     
-    CGRect defaultFrame = self.frame;
-    defaultFrame.origin.y = [self statusBarHeight];
-    [self setFrame:defaultFrame alpha:1.0f animated:NO];
+    [self resetToDefaultPosition:NO];
     
-    // remove gesture from current panGesture's view
-    if (self.panGesture.view) {
-        [self.panGesture.view removeGestureRecognizer:self.panGesture];
-    }
+    [_scrollView addObserver:self forKeyPath:@"contentOffset" options:0 context:NULL];
+    [_scrollView.panGestureRecognizer addTarget:self action:@selector(finishStateTransitionIfNeeded:)];
     
-    if (scrollView) {
-        [scrollView addGestureRecognizer:self.panGesture];
-    }
+    self.lastContentOffsetY = scrollView.contentOffset.y;
+}
+
+- (BOOL)isNavigationBarCompact {
+    return self.frame.origin.y != [self statusBarHeight];
 }
 
 - (void)resetToDefaultPosition:(BOOL)animated
 {
-    CGRect frame = self.frame;
-    frame.origin.y = [self statusBarHeight];
-    [self setFrame:frame alpha:1.0f animated:animated];
+    if ([self isNavigationBarCompact]) {
+        CGRect frame = self.frame;
+        frame.origin.y = [self statusBarHeight];
+        [self setFrame:frame alpha:1.0f animated:animated];
+    }
+    
+    self.scrollState = GTScrollNavigationBarNone;
+}
+
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
+    if ([object isEqual:self.scrollView] && [keyPath isEqualToString:@"contentOffset"]) {
+        [self handleScrollViewDidScroll:self.scrollView];
+    }
+    else {
+        [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+    }
 }
 
 #pragma mark - notifications
@@ -103,32 +122,24 @@
     [self resetToDefaultPosition:NO];
 }
 
-#pragma mark - UIGestureRecognizerDelegate
-- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
-shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer
-{
-    return YES;
-}
+#pragma mark - Scrolling
 
-#pragma mark - panGesture handler
-- (void)handlePan:(UIPanGestureRecognizer*)gesture
-{
-    if (!self.scrollView || gesture.view != self.scrollView) {
+#define kScrollThreshold 70.0f
+
+- (void)handleScrollViewDidScroll:(UIScrollView *)scrollView {
+    if (scrollView.frame.size.height + (self.bounds.size.height * 2) >= scrollView.contentSize.height) {
+        
+        [self resetToDefaultPosition:YES];
+        
         return;
     }
     
-    if (self.scrollView.frame.size.height + (self.bounds.size.height * 2) >= self.scrollView.contentSize.height) {
+    CGFloat contentOffsetY = scrollView.contentOffset.y;
+    
+    if (contentOffsetY < kScrollThreshold && self.isNavigationBarCompact) {
+        [self resetToDefaultPosition:YES];
         return;
-    }
-    
-    CGFloat contentOffsetY = self.scrollView.contentOffset.y;
-    
-    if (contentOffsetY < -self.scrollView.contentInset.top) {
-        return;
-    }
-    
-    if (gesture.state == UIGestureRecognizerStateBegan) {
-        self.scrollState = GTScrollNavigationBarNone;
+    } else if (contentOffsetY < kScrollThreshold) {
         self.lastContentOffsetY = contentOffsetY;
         return;
     }
@@ -144,16 +155,34 @@ shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherG
     CGFloat alpha = 1.0f;
     CGFloat statusBarHeight = [self statusBarHeight];
     CGFloat maxY = statusBarHeight;
-    CGFloat minY = maxY - CGRectGetHeight(frame) + 1.0f;
-    // NOTE: plus 1px to prevent the navigation bar disappears in iOS < 7
     
-    bool isScrollingAndGestureEnded = (gesture.state == UIGestureRecognizerStateEnded ||
-                                       gesture.state == UIGestureRecognizerStateCancelled) &&
-                                        (self.scrollState == GTScrollNavigationBarScrollingUp ||
-                                         self.scrollState == GTScrollNavigationBarScrollingDown);
-    if (isScrollingAndGestureEnded) {
+    CGFloat minY = maxY - CGRectGetHeight(frame);
+    
+    frame.origin.y -= deltaY;
+    frame.origin.y = MIN(maxY, MAX(frame.origin.y, minY));
+    
+    alpha = (frame.origin.y - (minY + statusBarHeight)) / (maxY - (minY + statusBarHeight));
+    alpha = MAX(kNearZero, alpha);
+    
+    [self setFrame:frame alpha:alpha animated:NO];
+    
+    self.lastContentOffsetY = contentOffsetY;
+}
+
+- (void)finishStateTransitionIfNeeded:(UIPanGestureRecognizer *)panGesture {
+    if (panGesture.state == UIGestureRecognizerStateEnded ||
+        panGesture.state == UIGestureRecognizerStateCancelled) {
+        
+        CGRect frame = self.frame;
+        CGFloat alpha = 1.0f;
+        CGFloat statusBarHeight = [self statusBarHeight];
+        CGFloat maxY = statusBarHeight;
+        CGFloat minY = maxY - CGRectGetHeight(frame);
+        
         CGFloat contentOffsetYDelta = 0.0f;
-        if (self.scrollState == GTScrollNavigationBarScrollingDown) {
+        if (self.scrollState == GTScrollNavigationBarScrollingDown ||
+            self.scrollView.contentOffset.y < kScrollThreshold) {
+            
             contentOffsetYDelta = maxY - frame.origin.y;
             frame.origin.y = maxY;
             alpha = 1.0f;
@@ -168,38 +197,22 @@ shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherG
         
         if (!self.scrollView.decelerating && !self.translucent) {
             CGPoint newContentOffset = CGPointMake(self.scrollView.contentOffset.x,
-                                                   contentOffsetY - contentOffsetYDelta);
+                                                   self.scrollView.contentOffset.y - contentOffsetYDelta);
             [self.scrollView setContentOffset:newContentOffset animated:YES];
         }
     }
-    else {
-        frame.origin.y -= deltaY;
-        frame.origin.y = MIN(maxY, MAX(frame.origin.y, minY));
-        
-        alpha = (frame.origin.y - (minY + statusBarHeight)) / (maxY - (minY + statusBarHeight));
-        alpha = MAX(kNearZero, alpha);
-        
-        [self setFrame:frame alpha:alpha animated:NO];
-    }
-    
-    self.lastContentOffsetY = contentOffsetY;
 }
 
 #pragma mark - helper methods
 - (CGFloat)statusBarHeight
 {
-    switch ([UIApplication sharedApplication].statusBarOrientation) {
-        case UIInterfaceOrientationPortrait:
-        case UIInterfaceOrientationPortraitUpsideDown:
-            return CGRectGetHeight([UIApplication sharedApplication].statusBarFrame);
-            break;
-        case UIInterfaceOrientationLandscapeLeft:
-        case UIInterfaceOrientationLandscapeRight:
-            return CGRectGetWidth([UIApplication sharedApplication].statusBarFrame);
-        default:
-            break;
-    };
-    return 0.0f;
+    CGRect statusBarFrame = [[UIApplication sharedApplication] statusBarFrame];
+    
+    CGRect statusBarWindowRect = [self.window convertRect:statusBarFrame fromWindow:nil];
+    
+    CGRect statusBarViewRect = [self.superview convertRect:statusBarWindowRect fromView:nil];
+    
+    return CGRectGetMaxY(statusBarViewRect);
 }
 
 - (void)setFrame:(CGRect)frame alpha:(CGFloat)alpha animated:(BOOL)animated
@@ -226,9 +239,22 @@ shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherG
         self.scrollView.superview.frame = parentViewFrame;
     }
     
+    CGRect backgroundViewRect = self.bounds;
+    backgroundViewRect.origin.y -= [self statusBarHeight];
+    backgroundViewRect.size.height += [self statusBarHeight];
+    UIView* backgroundView = self.subviews[0];
+    backgroundView.frame = backgroundViewRect;
+    
     if (animated) {
         [UIView commitAnimations];
     }
+    
+    NSDictionary *userInfo = @{GTScrollNavigationBarFrameNotificationOffsetYKey        : @(offsetY),
+                               GTScrollNavigationBarFrameNotificationIsBarCondensedKey : @([self isNavigationBarCompact])};
+    
+    [[NSNotificationCenter defaultCenter] postNotificationName:GTScrollNavigationBarFrameNotification
+                                                        object:self
+                                                      userInfo:userInfo];
 }
 
 @end
