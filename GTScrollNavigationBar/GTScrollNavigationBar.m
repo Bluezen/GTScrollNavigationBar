@@ -208,17 +208,22 @@ lastContentOffsetY = _lastContentOffsetY;
 {
     CGRect statusBarFrame = [[UIApplication sharedApplication] statusBarFrame];
     
-    CGRect statusBarWindowRect = [self.window convertRect:statusBarFrame fromWindow:nil];
-    
-    CGRect statusBarViewRect = [self.superview convertRect:statusBarWindowRect fromView:nil];
-    
-    return CGRectGetMaxY(statusBarViewRect);
+    return MIN(statusBarFrame.size.height, statusBarFrame.size.width);
 }
 
 - (void)setFrame:(CGRect)frame alpha:(CGFloat)alpha animated:(BOOL)animated
 {
     if (animated) {
         [UIView beginAnimations:@"GTScrollNavigationBarAnimation" context:nil];
+    }
+    
+    float statusBarHeight = [self statusBarHeight];
+    
+    frame.origin.x = 0.0f;
+    if (frame.origin.y > statusBarHeight) {
+        frame.origin.y = statusBarHeight;
+    } else if (frame.origin.y < statusBarHeight - frame.size.height) {
+        frame.origin.y = statusBarHeight - frame.size.height;
     }
     
     CGFloat offsetY = CGRectGetMinY(frame) - CGRectGetMinY(self.frame);
