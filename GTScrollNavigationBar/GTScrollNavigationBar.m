@@ -79,7 +79,7 @@ lastContentOffsetY = _lastContentOffsetY;
     
     _scrollView = scrollView;
     
-    [self resetToDefaultPosition:NO];
+    [self resetToDefaultPositionWithAnimation:NO];
     
     [_scrollView addObserver:self forKeyPath:@"contentOffset" options:0 context:NULL];
     [_scrollView.panGestureRecognizer addTarget:self action:@selector(finishStateTransitionIfNeeded:)];
@@ -91,12 +91,26 @@ lastContentOffsetY = _lastContentOffsetY;
     return self.frame.origin.y != [self statusBarHeight];
 }
 
-- (void)resetToDefaultPosition:(BOOL)animated
+- (void)resetToDefaultPositionWithAnimation:(BOOL)animated
 {
     if ([self isNavigationBarCompact]) {
         CGRect frame = self.frame;
         frame.origin.y = [self statusBarHeight];
         [self setFrame:frame alpha:1.0f animated:animated];
+    }
+    
+    self.scrollState = GTScrollNavigationBarNone;
+}
+
+- (void)compactWithAnimation:(BOOL)animated
+{
+    if (![self isNavigationBarCompact]) {
+        CGRect frame = self.frame;
+        
+        CGFloat minY = [self statusBarHeight] - CGRectGetHeight(frame);
+        
+        frame.origin.y = minY;
+        [self setFrame:frame alpha:kNearZero animated:animated];
     }
     
     self.scrollState = GTScrollNavigationBarNone;
@@ -114,33 +128,38 @@ lastContentOffsetY = _lastContentOffsetY;
 #pragma mark - notifications
 - (void)statusBarOrientationDidChange
 {
-    [self resetToDefaultPosition:NO];
+    [self resetToDefaultPositionWithAnimation:NO];
 }
 
 - (void)applicationDidBecomeActive
 {
-    [self resetToDefaultPosition:NO];
+    [self resetToDefaultPositionWithAnimation:NO];
 }
 
 #pragma mark - Scrolling
 
-#define kScrollThreshold 70.0f
+#define kScrollThreshold 0.0f
 
 - (void)handleScrollViewDidScroll:(UIScrollView *)scrollView {
+    
+    // Don't try to scroll navigation bar if there's not enough room
     if (scrollView.frame.size.height + (self.bounds.size.height * 2) >= scrollView.contentSize.height) {
         
-        [self resetToDefaultPosition:YES];
+        [self resetToDefaultPositionWithAnimation:YES];
         
         return;
     }
     
     CGFloat contentOffsetY = scrollView.contentOffset.y;
     
-    if (contentOffsetY < kScrollThreshold && self.isNavigationBarCompact) {
-        [self resetToDefaultPosition:YES];
+    if (contentOffsetY < (kScrollThreshold - scrollView.contentInset.top) && self.isNavigationBarCompact) {
+        [self resetToDefaultPositionWithAnimation:YES];
         return;
-    } else if (contentOffsetY < kScrollThreshold) {
+    } else if (contentOffsetY < (kScrollThreshold - scrollView.contentInset.top)) {
         self.lastContentOffsetY = contentOffsetY;
+        return;
+    } // If we exceed the height of content with a vertical bounce, do nothing
+    else if ( contentOffsetY > (scrollView.contentSize.height - scrollView.frame.size.height) ) {
         return;
     }
     
@@ -181,7 +200,7 @@ lastContentOffsetY = _lastContentOffsetY;
         
         CGFloat contentOffsetYDelta = 0.0f;
         if (self.scrollState == GTScrollNavigationBarScrollingDown ||
-            self.scrollView.contentOffset.y < kScrollThreshold) {
+            self.scrollView.contentOffset.y < (kScrollThreshold - self.scrollView.contentInset.top)) {
             
             contentOffsetYDelta = maxY - frame.origin.y;
             frame.origin.y = maxY;

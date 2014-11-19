@@ -23,7 +23,8 @@ extern NSString*  GTScrollNavigationBarFrameNotificationIsBarCondensedKey;
 @property (strong, nonatomic) UIScrollView *scrollView;
 @property (assign, nonatomic) GTScrollNavigationBarState scrollState;
 
-- (void)resetToDefaultPosition:(BOOL)animated;
+- (void)resetToDefaultPositionWithAnimation:(BOOL)animated;
+- (void)compactWithAnimation:(BOOL)animated;
 
 @end
 
