@@ -142,15 +142,18 @@ lastContentOffsetY = _lastContentOffsetY;
 
 - (void)handleScrollViewDidScroll:(UIScrollView *)scrollView {
     
+    CGFloat contentOffsetY = scrollView.contentOffset.y;
+    
     // Don't try to scroll navigation bar if there's not enough room
-    if (scrollView.frame.size.height + (self.bounds.size.height * 2) >= scrollView.contentSize.height) {
-        
-        [self resetToDefaultPositionWithAnimation:YES];
-        
+    if (scrollView.bounds.size.height >= scrollView.contentSize.height ) {
+        if (contentOffsetY >= (scrollView.contentSize.height - scrollView.frame.size.height) &&
+            self.isNavigationBarCompact) {
+            self.scrollState = GTScrollNavigationBarScrollingUp;
+        } else {
+            [self resetToDefaultPositionWithAnimation:YES];
+        }
         return;
     }
-    
-    CGFloat contentOffsetY = scrollView.contentOffset.y;
     
     if (contentOffsetY < (kScrollThreshold - scrollView.contentInset.top) && self.isNavigationBarCompact) {
         [self resetToDefaultPositionWithAnimation:YES];
@@ -160,6 +163,10 @@ lastContentOffsetY = _lastContentOffsetY;
         return;
     } // If we exceed the height of content with a vertical bounce, do nothing
     else if ( contentOffsetY > (scrollView.contentSize.height - scrollView.frame.size.height) ) {
+        self.lastContentOffsetY = scrollView.contentSize.height - scrollView.frame.size.height;
+        if (self.isNavigationBarCompact) {
+            self.scrollState = GTScrollNavigationBarScrollingUp;
+        }
         return;
     }
     
